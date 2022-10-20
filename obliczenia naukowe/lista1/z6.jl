@@ -7,7 +7,6 @@ function g(x::Float64)
 end
 
 
-for x in [8.0^-a for a in 1:10]
-    println("f(", x, ") = ", f(x))
-    println("g(", x, ") = ", g(x), "\n")
+for x in [-(a*2) for a in 1:15]
+    println("\$8^{$x}\$", " & ", f(8.0^x), " & ", g(8.0^x), "\\\\")
 end

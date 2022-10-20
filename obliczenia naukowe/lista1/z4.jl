@@ -5,5 +5,3 @@ function z4()
     end
     return x
 end
-
-println(z4())

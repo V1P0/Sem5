@@ -14,7 +14,7 @@ function my_eta(x::Type)
     end
     return e
 end
-
+# x - typ zmiennej dla której liczymy MAX
 function my_max(x::Type)
     a::x= 1
     while isfinite(a*2)

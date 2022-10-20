@@ -1,11 +1,11 @@
-function z3(start::Float64, finish::Float64, delta::Float64, increment::Float64)
+function z3(start::Float64, finish::Float64, increment::Float64)
+    a = b = nextfloat(start)-start
+    start += increment
     while start < finish
-        if nextfloat(start)-start != delta
-            return false
-        end
+        v = nextfloat(start)-start
+        a = min(a, v)
+        b = max(a, v)
         start += increment
     end
-    return true
+    println("min = $a, max = $b equal = $(a==b)")
 end
-
-println(z3(1.0, 2.0, 2^-52, 0.01))
