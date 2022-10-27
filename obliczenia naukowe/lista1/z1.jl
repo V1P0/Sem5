@@ -1,3 +1,5 @@
+# Mateusz Jończak 261691
+
 # x - typ zmiennej dla której liczymy epsilon maszynowy
 function my_eps(x::Type)
     eps::x = 1

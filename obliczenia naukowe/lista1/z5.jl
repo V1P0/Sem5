@@ -1,9 +1,12 @@
+# Mateusz Jończak 261691
+
 X32::Vector{Float32} = [2.718281828, -3.141592654, 1.414213562, 0.5772156649, 0.3010299957]
 Y32::Vector{Float32} = [1486.2497, 878366.9879, -22.37492, 4773714.647, 0.000185049]
 
 X64::Vector{Float64} = [2.718281828, -3.141592654, 1.414213562, 0.5772156649, 0.3010299957]
 Y64::Vector{Float64} = [1486.2497, 878366.9879, -22.37492, 4773714.647, 0.000185049]
 
+# obliczanie iloczynu skalarnego wektorów x, y z precyzją t metodą a
 function a(x, y, t::Type)
     s::t = 0
     for i in 1:5
@@ -12,6 +15,7 @@ function a(x, y, t::Type)
     return s
 end
 
+# obliczanie iloczynu skalarnego wektorów x, y z precyzją t metodą b
 function b(x, y, t::Type)
     s::t = 0
     for i in 5:-1:1
@@ -20,6 +24,7 @@ function b(x, y, t::Type)
     return s
 end
 
+# obliczanie iloczynu skalarnego wektorów x, y z precyzją t metodą c
 function c(x, y, t::Type)
     k = [a*b for (a, b) in zip(x, y)]
     pos = [a for a in k if a > 0]
@@ -38,6 +43,7 @@ function c(x, y, t::Type)
     return d+s
 end
 
+# obliczanie iloczynu skalarnego wektorów x, y z precyzją t metodą d
 function d(x, y, t::Type)
     k = [a*b for (a, b) in zip(x, y)]
     pos = [a for a in k if a > 0]
