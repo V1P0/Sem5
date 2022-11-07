@@ -12,12 +12,12 @@
     int len = 0;
     int stack[STACK_SIZE];
     int a, b;
-    bool error = false;
+    bool stack_error = false;
 
     void push(int n){
         len++;
         if(len > STACK_SIZE){
-            error = true;
+            stack_error = true;
         }else{
             stack[len-1] = n;
         }
@@ -28,7 +28,7 @@
             len--;
             return stack[len];
         }else{
-            error = true;
+            stack_error = true;
             return 0;
         }
     }
@@ -36,7 +36,7 @@
 
 %}
 
-%x ERROR 
+%x MATH_ERROR 
 
 %%
 -?[0-9]+  push(atoi(yytext));
@@ -50,7 +50,7 @@
 \-  {
     a = pop();
     b = pop();
-    push(a-b);
+    push(b-a);
 }
 
 \*  {
@@ -59,14 +59,42 @@
     push(a*b);
 }
 
+\/ {
+    a = pop();
+    b = pop();
+    if(a==0){
+        printf("Błąd: dzielenie przez 0\n");
+        BEGIN(MATH_ERROR);
+    }else{
+        push(b/a);
+    }
+}
+
+\% {
+    a = pop();
+    b = pop();
+    if(a==0){
+        printf("Błąd: dzielenie przez 0\n");
+        BEGIN(MATH_ERROR);
+    }else{
+        push(b%a);
+    }
+}
+
+\^ {
+    a = pop();
+    b = pop();
+    push((int) pow(b, a));
+}
+
 [ \t]   ;
 
 \n  {
     if(len==1){
-        if(error){
+        if(stack_error){
             printf("za mala liczba argumentow\n");
             len = 0;
-            error = false;
+            stack_error = false;
         }else{
             int res = pop();
             printf("= %d\n", res);
@@ -75,7 +103,15 @@
     }else{
         printf("za mala liczba operatorow\n");
         len = 0;
-        error = false;
+        stack_error = false;
+    }
+}
+
+<MATH_ERROR>{
+    .   ;
+    \n  {
+        len = 0;
+        BEGIN(INITIAL);
     }
 }
 
