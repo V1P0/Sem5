@@ -11,11 +11,13 @@ int yywrap();
 %%
 \' {BEGIN(COMMENT1); ECHO;}
 <COMMENT1>{
+    \\\' ECHO;
     \'  {ECHO; BEGIN(INITIAL);}
     .   ECHO;
 }
 \" {BEGIN(COMMENT2); ECHO;}
 <COMMENT2>{
+    \\\" ECHO;
     \"  {ECHO; BEGIN(INITIAL);}
     .   ECHO;
 }

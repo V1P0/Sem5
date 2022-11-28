@@ -1,6 +1,3 @@
-
-gamma = Dict()
-
 function cmf(p)
     m = length(p)
     pf = Array(1:m)

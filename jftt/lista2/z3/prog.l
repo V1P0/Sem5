@@ -25,7 +25,7 @@ bool doc = false;
     .   ECHO;
 }
 
-\>  {BEGIN(INC);  ECHO;}
+\< {BEGIN(INC);  ECHO;}
 <INC>{   
     \\\\ |
     \\\n |
@@ -34,29 +34,29 @@ bool doc = false;
     .   ECHO;
 }
 
-\/(\\|\n)*\/(\\|\n)*(\/|\!)  {BEGIN(SLD); if(doc) ECHO;}
+\/(\\\r?\n)*\/(\\\r?\n)*(\/|\!)  {BEGIN(SLD); if(doc) ECHO;}
 <SLD>{
-    .?\n    {if(doc) printf("\n"); BEGIN(INITIAL);}
-    . |
-    .*\\\n  {if(doc) ECHO;}
+    \\\r?\n |
+    .   if(doc) ECHO;;      
+    [^\\]\n {if(doc){ ECHO;}else{ printf("\n");}; BEGIN(INITIAL);}
 }
 
-\/(\\|\n)*\*(\\|\n)*(\*|\!)  {BEGIN(MLD); if(doc) ECHO;}
+\/(\\\r?\n)*\*(\\\r?\n)*(\*|\!)  {BEGIN(MLD); if(doc) ECHO;}
 <MLD>{
-    \*(\\|\n)*\/    {if(doc){ ECHO;}else{printf("\n");}; BEGIN(INITIAL);}
+    \*(\\\r?\n)*\/    {if(doc){ ECHO;}else{printf("\n");}; BEGIN(INITIAL);}
     .|\n    {if(doc) ECHO;}
 }
 
-\/(\\|\n)*\/    {BEGIN(SL);}
+\/(\\\r?\n)*\/    {BEGIN(SL);}
 <SL>{
-    .*\\\n |
+    \\\r?\n |
     .   ;      
     [^\\]\n {printf("\n"); BEGIN(INITIAL);}
 }
 
-\/(\\|\n)*\*    BEGIN(ML);
+\/(\\\r?\n)*\*    BEGIN(ML);
 <ML>{
-    \*(\\|\n)*\/    BEGIN(INITIAL);
+    \*(\\\r?\n)*\/    BEGIN(INITIAL);
     .|\n    ;
 }
 

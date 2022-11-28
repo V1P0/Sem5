@@ -9,8 +9,9 @@ int words = 0;
 
 %%
 ^[ \t]*\n*  ;
-[ \t]+$     ;
-[ \t]+ {printf(" "); words++;}
+^[ \t]+/[^ \t\n]    ;
+[ \t]+/[^ \t\n] {printf(" "); words++;}
+[ \t] ;
 \n  {printf("\n"); lines++; words++;}
 %%
 

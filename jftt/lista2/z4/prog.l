@@ -28,6 +28,7 @@
             len--;
             return stack[len];
         }else{
+            len--;
             stack_error = true;
             return 0;
         }
@@ -100,8 +101,12 @@
             printf("= %d\n", res);
             len = 0;
         }
-    }else{
+    }else if (len > 1){
         printf("za mala liczba operatorow\n");
+        len = 0;
+        stack_error = false;
+    }else{
+        printf("za mala liczba argumentow\n");
         len = 0;
         stack_error = false;
     }
