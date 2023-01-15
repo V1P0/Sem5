@@ -19,7 +19,10 @@ extern int yylineno;
 CodeGen cg;
 Procedure *currentProcedure = new Procedure(&cg);
 std::vector<std::string>* callArgs = new std::vector<std::string>();
-std::set<std::string>* uninitializedVariables = new std::set<std::string>();
+std::unordered_map<std::string, long> initialized_variables;
+std::unordered_map<std::string, long> used_variables;
+int loop_depth = 0;
+bool had_if = false;
 
 
 void insertMultiply(std::string x, std::string y){
@@ -162,6 +165,24 @@ void insertModulo(std::string x, std::string y){
     currentProcedure->addInstruction(Instruction(I_SUB, r4));
 }
 
+void checkInitialization(){
+    if(loop_depth) return;
+    for(auto& var : used_variables){
+        if(initialized_variables.find(var.first)==initialized_variables.end()){
+            std::cerr << "LINE: " << var.second << " uninitialized variable - " << var.first << std::endl;
+            exit(1);
+        }else if(initialized_variables[var.first] >= var.second){
+            if(!had_if){
+                std::cerr << "LINE: " << var.second << " uninitialized variable - " << var.first << std::endl;
+                exit(1);
+            }else{
+            std::cerr << "WARNING! LINE: " << var.second << " variable may be used before initialization - " << var.first << std::endl;
+            }
+        }
+    }
+    had_if = false;
+}
+
 %}
 %union sem_rec {
     std::string* str;
@@ -195,8 +216,8 @@ void insertModulo(std::string x, std::string y){
 PROGRAM_ALL: PROCEDURES MAIN
 ;
 
-PROCEDURES: PROCEDURES PROCEDURE PROC_HEAD IS VAR DECLARATIONS X_BEGIN COMMANDS END {cg.addProcedure(currentProcedure, *($3)); currentProcedure = new Procedure(&cg); uninitializedVariables = new std::set<std::string>();}
-          | PROCEDURES PROCEDURE PROC_HEAD IS X_BEGIN COMMANDS END {cg.addProcedure(currentProcedure, *($3)); currentProcedure = new Procedure(&cg); uninitializedVariables = new std::set<std::string>();}
+PROCEDURES: PROCEDURES PROCEDURE PROC_HEAD IS VAR DECLARATIONS X_BEGIN COMMANDS END {cg.addProcedure(currentProcedure, *($3)); currentProcedure = new Procedure(&cg); initialized_variables.clear(); used_variables.clear();}
+          | PROCEDURES PROCEDURE PROC_HEAD IS X_BEGIN COMMANDS END {cg.addProcedure(currentProcedure, *($3)); currentProcedure = new Procedure(&cg); initialized_variables.clear(); used_variables.clear();}
           |
 ;
 
@@ -210,39 +231,49 @@ COMMANDS: COMMANDS COMMAND
 
 COMMAND: IDENTIFIER ASSIGN EXPRESSION SEMICOLON {
     if(!currentProcedure->isExtern(*($1))){
-        if(uninitializedVariables->find(*($1))==uninitializedVariables->end()){
-            currentProcedure->getVariable(*($1));
-        }else{
-            uninitializedVariables->erase(*($1));
+        currentProcedure->getVariable(*($1));
+        if(initialized_variables.find(*($1)) == initialized_variables.end()){
+            initialized_variables[*($1)] = yylineno;
         }
         }currentProcedure->addInstruction(Instruction(I_STORE, *($1)));
         }
         | S_IF CONDITION THEN COMMANDS S_ELSE COMMANDS ENDIF {currentProcedure->addInstruction(Instruction(I_ENDIF, "0"));}
         | S_IF CONDITION THEN COMMANDS ENDIF {currentProcedure->addInstruction(Instruction(I_ENDIF, "0"));}
-        | S_WHILE CONDITION DO COMMANDS ENDWHILE {currentProcedure->addInstruction(Instruction(I_ENDWHILE, "0"));}
-        | S_REPEAT COMMANDS UNTIL CONDITION SEMICOLON {currentProcedure->addInstruction(Instruction(I_UNTIL, "0"));}
+        | S_WHILE CONDITION DO COMMANDS ENDWHILE {currentProcedure->addInstruction(Instruction(I_ENDWHILE, "0"));loop_depth--;checkInitialization();}
+        | S_REPEAT COMMANDS UNTIL CONDITION SEMICOLON {currentProcedure->addInstruction(Instruction(I_UNTIL, "0"));loop_depth--;checkInitialization();}
         | IN_PROC_HEAD SEMICOLON {}
         | READ IDENTIFIER SEMICOLON {
-            if(uninitializedVariables->find(*($2))!=uninitializedVariables->end()){
-            uninitializedVariables->erase(*($2));
-        }
+            if(!currentProcedure->isExtern(*($2))){
+                currentProcedure->getVariable(*($2));
+                if(initialized_variables.find(*($2)) == initialized_variables.end()){
+                    initialized_variables[*($2)] = yylineno;
+                }
+            }
             currentProcedure->addInstruction(Instruction(I_GET, *($2)));}
         | WRITE VALUE SEMICOLON {
-            if(!currentProcedure->isExtern(*($2)) && uninitializedVariables->find(*($2))!=uninitializedVariables->end()){
-                    std::cout <<"Line: "<<yylineno<< " Variable " << *($2) << " is not initialized" << std::endl;
-                    exit(1);
+            if(!currentProcedure->isExtern(*($2)) && !cg.isNumber(*($2)) ){
+                currentProcedure->getVariable(*($2));
+                if(initialized_variables.find(*($2)) == initialized_variables.end()){
+                    if(!loop_depth){
+                        std::cerr << "LINE: " << yylineno << " uninitialized variable - " << *($2) << std::endl;
+                        exit(1);
+                    }
                 }
+                if(used_variables.find(*($2)) == used_variables.end()){
+                    used_variables[*($2)] = yylineno;
+                }
+            }
             currentProcedure->addInstruction(Instruction(I_PUT, *($2)));}
 ;
 
-S_IF: IF {currentProcedure->addInstruction(Instruction(I_IF, "0"));}
+S_IF: IF {currentProcedure->addInstruction(Instruction(I_IF, "0")); had_if = true;}
 ;
 
 S_ELSE: ELSE {currentProcedure->addInstruction(Instruction(I_ELSE, "0"));}
 ;
-S_WHILE: WHILE {currentProcedure->addInstruction(Instruction(I_WHILE, "0"));}
+S_WHILE: WHILE {currentProcedure->addInstruction(Instruction(I_WHILE, "0")); loop_depth++;}
 ;
-S_REPEAT: REPEAT {currentProcedure->addInstruction(Instruction(I_REPEAT, "0"));}
+S_REPEAT: REPEAT {currentProcedure->addInstruction(Instruction(I_REPEAT, "0")); loop_depth++;}
 ;
 PROC_HEAD: IDENTIFIER LPR E_DECLARATIONS RPR {$$ = $1;}
 ;
@@ -255,8 +286,8 @@ IN_PROC_HEAD: IDENTIFIER LPR IN_DECLARATIONS RPR {
 }
 ;
 
-DECLARATIONS: DECLARATIONS COMMA IDENTIFIER {currentProcedure->addVariable(*($3));uninitializedVariables->insert(*($3));}
-            | IDENTIFIER {currentProcedure->addVariable(*($1));uninitializedVariables->insert(*($1));}
+DECLARATIONS: DECLARATIONS COMMA IDENTIFIER {currentProcedure->addVariable(*($3));}
+            | IDENTIFIER {currentProcedure->addVariable(*($1));}
 ;
 
 E_DECLARATIONS: E_DECLARATIONS COMMA IDENTIFIER {currentProcedure->addExternVariable(*($3));}
@@ -265,70 +296,40 @@ E_DECLARATIONS: E_DECLARATIONS COMMA IDENTIFIER {currentProcedure->addExternVari
 
 IN_DECLARATIONS: IN_DECLARATIONS COMMA IDENTIFIER {
     callArgs->push_back(*($3));
-    if(uninitializedVariables->find(*($3))!=uninitializedVariables->end()){
-            uninitializedVariables->erase(*($3));
-        }}
+    if(!currentProcedure->isExtern(*($3))){
+        currentProcedure->getVariable(*($3));
+        if(initialized_variables.find(*($3)) == initialized_variables.end()){
+            initialized_variables[*($3)] = yylineno;
+        }
+        if(used_variables.find(*($3)) == used_variables.end()){
+            used_variables[*($3)] = yylineno;
+        }
+    }
+}
             | IDENTIFIER {callArgs->push_back(*($1));
-            if(uninitializedVariables->find(*($1))!=uninitializedVariables->end()){
-            uninitializedVariables->erase(*($1));
-        }}
+            if(!currentProcedure->isExtern(*($1))){
+                currentProcedure->getVariable(*($1));
+                if(initialized_variables.find(*($1)) == initialized_variables.end()){
+                    initialized_variables[*($1)] = yylineno;
+                }
+                if(used_variables.find(*($1)) == used_variables.end()){
+                    used_variables[*($1)] = yylineno;
+                }
+            }
+            }
 ;
 
 EXPRESSION: VALUE {
-    if(!currentProcedure->isExtern(*($1)) && uninitializedVariables->find(*($1))!=uninitializedVariables->end()){
-        std::cout <<"Line: "<<yylineno<< " Variable " << *($1) << " is not initialized" << std::endl;
-        exit(1);
-    }
-    currentProcedure->addInstruction(Instruction(I_LOAD, *($1)));}
+            currentProcedure->addInstruction(Instruction(I_LOAD, *($1)));}
             | VALUE ADD VALUE {
-                if(!currentProcedure->isExtern(*($1)) && uninitializedVariables->find(*($1))!=uninitializedVariables->end()){
-                    std::cout <<"Line: "<<yylineno<< " Variable " << *($1) << " is not initialized" << std::endl;
-                    exit(1);
-                }
-                if(!currentProcedure->isExtern(*($3)) && uninitializedVariables->find(*($3))!=uninitializedVariables->end()){
-                    std::cout <<"Line: "<<yylineno<< " Variable " << *($3) << " is not initialized" << std::endl;
-                    exit(1);
-                }
                 currentProcedure->addInstruction(Instruction(I_LOAD, *($1))); currentProcedure->addInstruction(Instruction(I_ADD, *($3)));}
             | VALUE SUB VALUE {
-                if(!currentProcedure->isExtern(*($1)) && uninitializedVariables->find(*($1))!=uninitializedVariables->end()){
-                    std::cout <<"Line: "<<yylineno<< " Variable " << *($1) << " is not initialized" << std::endl;
-                    exit(1);
-                }
-                if(!currentProcedure->isExtern(*($3)) && uninitializedVariables->find(*($3))!=uninitializedVariables->end()){
-                    std::cout <<"Line: "<<yylineno<< " Variable " << *($3) << " is not initialized" << std::endl;
-                    exit(1);
-                }
                 currentProcedure->addInstruction(Instruction(I_LOAD, *($1))); currentProcedure->addInstruction(Instruction(I_SUB, *($3)));}
             | VALUE MUL VALUE {
-                if(!currentProcedure->isExtern(*($1)) && uninitializedVariables->find(*($1))!=uninitializedVariables->end()){
-                    std::cout <<"Line: "<<yylineno<< " Variable " << *($1) << " is not initialized" << std::endl;
-                    exit(1);
-                }
-                if(!currentProcedure->isExtern(*($3)) && uninitializedVariables->find(*($3))!=uninitializedVariables->end()){
-                    std::cout <<"Line: "<<yylineno<< " Variable " << *($3) << " is not initialized" << std::endl;
-                    exit(1);
-                }
                 insertMultiply(*($1),*($3));}
             | VALUE DIV VALUE {
-                if(!currentProcedure->isExtern(*($1)) && uninitializedVariables->find(*($1))!=uninitializedVariables->end()){
-                    std::cout <<"Line: "<<yylineno<< " Variable " << *($1) << " is not initialized" << std::endl;
-                    exit(1);
-                }
-                if(!currentProcedure->isExtern(*($3)) && uninitializedVariables->find(*($3))!=uninitializedVariables->end()){
-                    std::cout <<"Line: "<<yylineno<< " Variable " << *($3) << " is not initialized" << std::endl;
-                    exit(1);
-                }
                 if(*($3)!=std::string("2")){insertDivision(*($1),*($3));}else{currentProcedure->addInstruction(Instruction(I_LOAD, *($1))); currentProcedure->addInstruction(Instruction(I_HALF, *($3)));}}
             | VALUE MOD VALUE {
-                if(!currentProcedure->isExtern(*($1)) && uninitializedVariables->find(*($1))!=uninitializedVariables->end()){
-                    std::cout <<"Line: "<<yylineno<< " Variable " << *($1) << " is not initialized" << std::endl;
-                    exit(1);
-                }
-                if(!currentProcedure->isExtern(*($3)) && uninitializedVariables->find(*($3))!=uninitializedVariables->end()){
-                    std::cout <<"Line: "<<yylineno<< " Variable " << *($3) << " is not initialized" << std::endl;
-                    exit(1);
-                }
                 insertModulo(*($1),*($3));}
 ;
 
@@ -369,7 +370,18 @@ CONDITION: VALUE EQ VALUE {
 ;
 
 VALUE: NUM {cg.addNumber(*($1)); $$ = $1;}
-    | IDENTIFIER {$$ = $1; if(!currentProcedure->isExtern(*($1))){currentProcedure->getVariable(*($1));}}
+    | IDENTIFIER {$$ = $1; if(!currentProcedure->isExtern(*($1))){
+        currentProcedure->getVariable(*($1));
+        if(initialized_variables.find(*($1))==initialized_variables.end()){
+            if(!loop_depth){
+                std::cerr << "LINE: " << yylineno << " uninitialized variable - " << *($1) << std::endl;
+                exit(1);
+            }
+        }
+        if(used_variables.find(*($1))==used_variables.end()){
+            used_variables[*($1)]=yylineno;
+        }
+        }}
 ;
 
 %%

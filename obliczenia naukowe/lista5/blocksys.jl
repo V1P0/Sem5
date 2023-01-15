@@ -136,43 +136,13 @@ function calculate_b(A::SparseMatrixCSC{Float64,Int64}, n::Int64, l::Int64) :: V
 end
 
 
-
 """
 
-gauss(A::SparseMatrixCSC{Float64, Int64}, b::Vector{Float64}, n::Int64, l::Int64)
+partialPivot(A::SparseMatrixCSC{Float64, Int64}, n::Int64, l::Int64) :: Vector{Int64}
 
-In-place Gauss elimination.
+generate pivot table for partial pivoting.
 
-time complexity: O(n*l^2).
-
-# Arguments
-- `A::SparseMatrixCSC{Float64, Int64}`: matrix
-- `b::Vector{Float64}`: vector
-- `n::Int64`: number of rows
-- `l::Int64`: size of block
-"""
-function gauss(A::SparseMatrixCSC{Float64, Int64}, b::Vector{Float64}, n::Int64, l::Int64) :: Nothing
-    for k in 1 : n -1
-        for i in k + 1 : min(n, k + l + 1)
-            z = A[i, k] / A[k, k]
-            A[i, k] = 0.0
-
-            for j in k + 1 : min(n, k + l + 1)
-                A[i, j] -= z * A[k, j]
-            end
-            
-            b[i] -= z* b[k]
-        end
-    end
-end
-
-"""
-
-gaussLU(A::SparseMatrixCSC{Float64, Int64}, n::Int64, l::Int64)
-
-Gauss elimination with LU decomposition.
-
-time complexity: O(n*l^2).
+time complexity: O(n*l).
 
 # Arguments
 - `A::SparseMatrixCSC{Float64, Int64}`: matrix
@@ -180,36 +150,49 @@ time complexity: O(n*l^2).
 - `l::Int64`: size of block
 
 # Returns
-- `L::SparseMatrixCSC{Float64, Int64}`: lower triangular matrix
+- `pivot::Vector{Int64}`: pivot table
 """
-function gaussLU(A::SparseMatrixCSC{Float64, Int64}, n::Int64, l::Int64)
-    L = spzeros(n, n)
 
-    for k in 1 : n - 1
-        L[k, k] = 1.0
-        for i in k + 1 : min(n, k + l + 1)
-            z = A[i, k] / A[k, k]
-            L[i, k] = z
-            A[i, k] = 0.0
-            for j in k + 1 : min(n, k + l)
-                A[i, j] -=  z * A[k, j]
+function partialPivot(A::SparseMatrixCSC{Float64, Int64}, n::Int64, l::Int64) :: Vector{Int64}
+
+    pivot = [x for x in 1 : n]
+
+    for k in 1:Int(n/l)
+
+        for p in (k-1)*l+1 : k*l
+            curr = abs(A[pivot[p], p])
+
+            max_value = curr
+            max_index = pivot[p]
+            search_end = k*l
+            for i in (p+1) : search_end
+                if i > n
+                    break
+                end
+                potential = A[pivot[i], p]
+                if abs(potential) > max_value
+                    max_value = abs(potential)
+                    max_index = pivot[i]
+                end
             end
-        end
-    end
-    
-    L[n, n] = 1
-    
-    return L
-end
+            if max_value > curr
+                pivot[p], pivot[max_index] = pivot[max_index], pivot[p]
+            end
 
-    
+        end
+
+    end
+
+    return pivot
+
+end
 """
 
-gaussPivoted(A::SparseMatrixCSC{Float64, Int64}, b::Vector{Float64}, n::Int64, l::Int64)
+decomposeIntoLU(A::SparseMatrixCSC{Float64, Int64}, b::Vector{Float64}, n::Int64, l::Int64) :: Tuple{SparseMatrixCSC{Float64, Int64}, Vector{Float64}, Vector{Int64}}
 
-Gauss elimination with pivoting.
+decomposes matrix A into LU.
 
-time complexity: O(n*l^2).
+time complexity: O(n*l).
 
 # Arguments
 - `A::SparseMatrixCSC{Float64, Int64}`: matrix
@@ -218,88 +201,151 @@ time complexity: O(n*l^2).
 - `l::Int64`: size of block
 
 # Returns
-- `perm::Vector{Int64}`: permutation vector
+- `LU::SparseMatrixCSC{Float64, Int64}`: LU matrix
+- `bprime::Vector{Float64}`: vector
+- `pivot::Vector{Int64}`: pivot table
 """
+function decomposeIntoLU(A::SparseMatrixCSC{Float64, Int64}, b::Vector{Float64}, n::Int64, l::Int64, pivot::Vector{Int64} = [x for x in 1:n]) :: Tuple{SparseMatrixCSC{Float64, Int64}, Vector{Float64}}
 
-function gaussPivoted(A::SparseMatrixCSC{Float64, Int64}, b::Vector{Float64}, n::Int64, l::Int64)
-    perm = collect(1 : n)
 
-    for k in 1 : n - 1
-        maxInColValue = 0
-        maxInColIndex = 0
+    LU = copy(A)
 
-        for i in k : min(n, k + l + 1)
-            if abs(A[perm[i], k]) > maxInColValue
-                maxInColValue = abs(A[perm[i], k])
-                maxInColIndex = i
+    bprime = copy(b)
+
+    for k in 1:Int64(n/l)
+        for p in (k-1)*l+1 : k*l
+
+            for i in (p+1) : k*l + l
+                if i > n
+                    break
+                end
+                lᵢₚ = LU[pivot[i], p] / LU[pivot[p], p]
+
+                for j in p : k*l + l
+                    if j > n
+                        break
+                    end
+                    LU[pivot[i], j] = LU[pivot[i], j] - lᵢₚ * LU[pivot[p], j]
+                end
+
+                bprime[pivot[i]] = bprime[pivot[i]] - lᵢₚ * bprime[pivot[p]]
+
+                LU[pivot[i], p] = lᵢₚ
             end
-        end
-
-        perm[maxInColIndex], perm[k] = perm[k], perm[maxInColIndex]
-
-        for i in k + 1 : min(n, k + l + 1)
-            z = A[perm[i], k] / A[perm[k], k]
-            A[perm[i], k] = 0.0
-
-            for j in k + 1 : min(n, k + 2 * l)
-                A[perm[i], j] -= z * A[perm[k], j]
-            end
-            b[perm[i]] -= z * b[perm[k]]
         end
     end
 
-    return perm
+    return LU, bprime
+
 end
 
 """
 
-gaussPivotedLU(A::SparseMatrixCSC{Float64, Int64}, n::Int64, l::Int64)
+solveUpperTriangularMatrix(A::SparseMatrixCSC{Float64, Int64}, b::Vector{Float64}, n::Int64, l::Int64, pivot::Vector{Int64} = [x for x in 1:n]) :: Vector{Float64}
 
-Gauss elimination with pivoting and LU decomposition.
+solves Ax=b.
 
-time complexity: O(n*l^2).
+time complexity: O(n*l).
 
 # Arguments
 - `A::SparseMatrixCSC{Float64, Int64}`: matrix
+- `b::Vector{Float64}`: vector
 - `n::Int64`: number of rows
 - `l::Int64`: size of block
+- `pivot::Vector{Int64}`: pivot table
 
 # Returns
-- `L::SparseMatrixCSC{Float64, Int64}`: lower triangular matrix
-- `perm::Vector{Int64}`: permutation vector
+- `x::Vector{Float64}`: solution
 """
 
-function gaussPivotedLU(A::SparseMatrixCSC{Float64, Int64}, n::Int64, l::Int64)
-    L = spzeros(n, n)
+function solveUpperTriangularMatrix(A::SparseMatrixCSC{Float64, Int64}, b::Vector{Float64}, n::Int64, l::Int64, pivot::Vector{Int64} = [x for x in 1:n]) :: Vector{Float64}
 
-    perm = collect(1 : n)
+    x = [0.0 for _ in 1:n]
 
-    for k in 1 : n - 1
-        maxInColValue = 0
-        maxInColIndex = 0
+    for k in Int64(n/l) : -1 : 1
+        for p in k*l : -1 : (k-1)*l+1
 
-        for i in k : min(n, k + l + 1)
-            if abs(A[perm[i], k]) > maxInColValue
-                maxInColValue = abs(A[perm[i], k])
-                maxInColIndex = i
+            tmp = b[pivot[p]]
+            for i in (p+1) : (k*l + l)
+                if i > n
+                    break
+                end
+                tmp -= x[pivot[i]] * A[pivot[p], i]
             end
-        end
-        
-        perm[maxInColIndex], perm[k] = perm[k], perm[maxInColIndex]
+            x[pivot[p]] = tmp/A[pivot[p], p]
 
-        for i in k + 1 : min(n, k + l + 1)
-            z = A[perm[i], k] / A[perm[k], k]
-
-            L[perm[i], k] = z
-            A[perm[i], k] = 0.0
-
-            for j in k + 1 : min(n, k + 2 * l)
-                A[perm[i], j] -= z * A[perm[k], j]
-            end
         end
     end
 
-    return L, perm
+    return x
+
+end
+
+"""
+
+solveFromLU(LU, b::Vector, n::Int, l::Int, pivot::Vector = [x for x in 1:n])::Array
+
+solves LU*x=b
+
+# Arguments:
+- `LU` — LU decomposition of a given matrix
+- `b` — the `b` vector
+- `n` — the size of the matrix
+- `l` — size of block
+- `pivot` — pivot table
+
+# Returns
+- `x::Vector{Float64}`: solution
+"""
+
+
+
+function solveFromLU(LU, b::Vector, n::Int, l::Int, pivot::Vector = [x for x in 1:n])::Array
+
+
+    y = zeros(n)
+
+    for k in 1:Int(n/l)
+        for p in (k-1)*l+1 : k*l
+
+            tmp = b[pivot[p]]
+            for i in (p-1) : -1 : (k-1)*l - l
+                if i <= 0
+                    break
+                end
+                tmp -= y[pivot[i]] * LU[pivot[p], i]
+            end
+
+            y[pivot[p]] = tmp
+
+        end
+    end
+
+    return solveUpperTriangularMatrix(LU, y, n, l, pivot)
+
+end
+
+"""
+gaussianElimination(A, b::Vector, n::Int, l::Int, pivot::Vector = [x for x in 1:n])::Array
+
+Solves the `Ax = b` equation.
+
+# Arguments:
+- `A` — the input matrix
+- `b` — the `b` vector
+- `n` — the size of the matrix
+- `l` — size of block
+- `pivot` — pivot table
+# Returns
+— the `x` output vector (solution to the `Ax = b` equation)
+"""
+
+function gaussianElimination(A, b::Vector, n::Int, l::Int, pivot::Vector = [x for x in 1:n])::Array
+
+   LU, bprime = decomposeIntoLU(A, b, n, l, pivot)
+
+    return solveUpperTriangularMatrix(LU, bprime, n, l, pivot)
+
 end
 
 """
@@ -320,19 +366,7 @@ time complexity: O(n*l^2).
 - `x_n::Vector{Float64}`: solution
 """
 function solveGauss(A::SparseMatrixCSC{Float64, Int64}, b::Vector{Float64}, n::Int64, l::Int64) :: Vector{Float64}
-    gauss(A, b, n, l)
-    
-    x_n = zeros(Float64, n)
-
-    for i in n:-1:1
-        x_i = 0
-        for j in i + 1 : min(n, i + l)
-            x_i += A[i, j] * x_n[j]
-        end
-        x_n[i] = (b[i] - x_i) / A[i, i]
-    end
-
-    return x_n
+   return gaussianElimination(A, b, n, l)
 end
 
 """
@@ -354,25 +388,8 @@ time complexity: O(n*l^2).
 """
 
 function solveGaussPivoted(A::SparseMatrixCSC{Float64, Int64}, b::Vector{Float64}, n::Int64, l::Int64)
-    perm = gaussPivoted(A, b, n, l)
-
-    x_n = zeros(Float64, n)
-
-    for k in 1 : n-1
-        for i in k + 1 : min(n, k + 2 * l)
-            b[perm[i]] -= A[perm[i], k] * b[perm[k]]
-        end
-    end
-
-    for i in n:-1:1
-        x_i = 0
-        for j in i + 1 : min(n, i + 2 * l)
-            x_i += A[perm[i], j] * x_n[j]
-        end
-        x_n[i] = (b[perm[i]] - x_i) / A[perm[i], i]
-    end
-
-    return x_n
+    pivot = partialPivot(A, n, l)
+    return gaussianElimination(A, b, n, l, pivot)
 end
 
 """
@@ -394,25 +411,9 @@ time complexity: O(n*l^2).
 """
 
 function solveGaussLU(A::SparseMatrixCSC{Float64, Int64}, b::Vector{Float64}, n::Int64, l::Int64)
-    L = gaussLU(A, n, l)
-        
-    x_n = zeros(Float64, n)
+    LU, _ = decomposeIntoLU(A, b, n, l)
+    return solveFromLU(LU, b, n, l)
 
-    for k in 1 : n - 1
-        for i in k + 1 : min(n, k + l + 1)
-            b[i] -= L[i, k] * b[k]
-        end
-    end
-    
-    for i in n : -1 : 1
-        x_i = 0
-        for j in i + 1 : min(n, i + l)
-            x_i += A[i, j] * x_n[j]
-        end
-        x_n[i] = (b[i] - x_i) / A[i, i]
-    end
-
-    return x_n
 end
 
 """
@@ -435,25 +436,10 @@ time complexity: O(n*l^2).
 
 
 function solveGaussPivotedLU(A::SparseMatrixCSC{Float64, Int64}, b::Vector{Float64}, n::Int64, l::Int64)
-    L, perm = gaussPivotedLU(A, n, l)
-    
-    x_n = zeros(Float64, n)
+    pivot = partialPivot(A, n, l)
+    LU, _ = decomposeIntoLU(A, b, n, l, pivot)
+    return solveFromLU(LU, b, n, l, pivot)
 
-    for k in 1 : n - 1
-        for i in k + 1 : min(n, k + l + 1)
-            b[perm[i]] -= L[perm[i], k] * b[perm[k]]
-        end
-    end
-    
-    for i in n : -1 : 1
-        x_i = 0
-        for j in i + 1 : min(n, i + 2 * l)
-            x_i += A[perm[i], j] * x_n[j]
-        end
-        x_n[i] = (b[perm[i]] - x_i) / A[perm[i], i]
-    end
-
-    return x_n
 end
 
 
